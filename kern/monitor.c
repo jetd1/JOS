@@ -57,6 +57,8 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf)
 int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 {
+	uint32_t ebp = read_ebp();
+	cprintf("%k04%p\n", ebp);
 	// Your code here.
 	return 0;
 }
