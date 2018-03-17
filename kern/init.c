@@ -6,6 +6,7 @@
 
 #include <kern/monitor.h>
 #include <kern/console.h>
+#include <inc/x86.h>
 
 // Test the stack backtrace function (lab 1 only)
 void
@@ -42,8 +43,9 @@ i386_init(void)
 	test_backtrace(5);
 
 	// Drop into the kernel monitor.
-	while (1)
+//	while (1)
 		monitor(NULL);
+//    outw(0xB004, 0x00002000);
 }
 
 
