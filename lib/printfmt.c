@@ -75,6 +75,12 @@ getint(va_list *ap, int lflag)
 		return va_arg(*ap, int);
 }
 
+// Parse char 0-f to int 0-15
+static int
+parsedigit(int ch)
+{
+    return ch > '9' ? ch - 'a' + 10 : ch - '0';
+}
 
 // Main function to format and print a string.
 void printfmt(void (*putch)(int, void*), void *putdat, const char *fmt, ...);
@@ -85,13 +91,16 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 	register const char *p;
 	register int ch, err;
 	unsigned long long num;
-	int base, lflag, width, precision, altflag;
+	int base, lflag, width, precision, altflag, color;
 	char padc;
+
+    color = 0;
 
 	while (1) {
 		while ((ch = *(unsigned char *) fmt++) != '%') {
 			if (ch == '\0')
 				return;
+            ch |= (color << 8);
 			putch(ch, putdat);
 		}
 
@@ -101,6 +110,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		precision = -1;
 		lflag = 0;
 		altflag = 0;
+
 	reswitch:
 		switch (ch = *(unsigned char *) fmt++) {
 
@@ -131,6 +141,13 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 					break;
 			}
 			goto process_precision;
+
+        // parse color when meets %kXX
+        case 'k':
+            color = parsedigit(*(unsigned char *) fmt++);
+            color <<= 4;
+            color |= parsedigit(*(unsigned char *) fmt++);
+            break;
 
 		case '*':
 			precision = va_arg(ap, int);
@@ -205,11 +222,9 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 
 		// (unsigned) octal
 		case 'o':
-			// Replace this with your code.
-			putch('X', putdat);
-			putch('X', putdat);
-			putch('X', putdat);
-			break;
+            num = getuint(&ap, lflag);
+            base = 8;
+            goto number;
 
 		// pointer
 		case 'p':
