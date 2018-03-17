@@ -8,6 +8,7 @@
 #include <kern/console.h>
 #include <kern/pmap.h>
 #include <kern/kclock.h>
+#include <inc/x86.h>
 
 
 void
@@ -29,9 +30,13 @@ i386_init(void)
 	// Lab 2 memory management initialization functions
 	mem_init();
 
+    	cprintf("%k0000 %k0101 %k0202 %k0303 %k0404 %k0505 %k0606 %k0707\n");
+    	cprintf("%k0808 %k0909 %k0a0a %k0b0b %k0c0c %k0d0d %k0e0e %k0f0f\n");
+
 	// Drop into the kernel monitor.
-	while (1)
+//	while (1)
 		monitor(NULL);
+//    outw(0xB004, 0x00002000);
 }
 
 
