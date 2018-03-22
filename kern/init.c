@@ -63,7 +63,7 @@ _panic(const char *file, int line, const char *fmt,...)
 	asm volatile("cli; cld");
 
 	va_start(ap, fmt);
-	cprintf("kernel panic at %s:%d: ", file, line);
+	cprintf("%k04kernel panic at %s:%d: ", file, line);
 	vcprintf(fmt, ap);
 	cprintf("\n");
 	va_end(ap);
@@ -81,7 +81,7 @@ _warn(const char *file, int line, const char *fmt,...)
 	va_list ap;
 
 	va_start(ap, fmt);
-	cprintf("kernel warning at %s:%d: ", file, line);
+	cprintf("%k0ekernel warning at %s:%d: ", file, line);
 	vcprintf(fmt, ap);
 	cprintf("\n");
 	va_end(ap);

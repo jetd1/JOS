@@ -62,7 +62,8 @@ i386_detect_memory(void)
 // Set up memory mappings above UTOP.
 // --------------------------------------------------------------
 
-static void boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm);
+static void boot_map_region(pde_t *pgdir, uintptr_t va, size_t size,
+							physaddr_t pa, int perm);
 static void check_page_free_list(bool only_low_memory);
 static void check_page_alloc(void);
 static void check_kern_pgdir(void);
@@ -306,7 +307,7 @@ page_init(void)
 struct PageInfo *
 page_alloc(int alloc_flags)
 {
-    cprintf("%k01%p\n", page_free_list);
+//    cprintf("%k01%p\n", page_free_list);
 
     if (page_free_list == NULL) {
 //        mon_backtrace(0, 0, 0);
@@ -316,12 +317,13 @@ page_alloc(int alloc_flags)
 
 	struct PageInfo *ret_page = page_free_list;
     page_free_list = ret_page->pp_link;
+    ret_page->pp_ref = 0;
     ret_page->pp_link = NULL;
 
     if (alloc_flags & ALLOC_ZERO)
         memset(page2kva(ret_page), 0, PGSIZE);
 
-    cprintf("%k02%p\n", page_free_list);
+//    cprintf("%k02%p\n", page_free_list);
 
 
     return ret_page;
@@ -385,8 +387,27 @@ page_decref(struct PageInfo* pp)
 pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
-	// Fill this function in
-	return NULL;
+	uint32_t pdx = PDX(va), ptx = PTX(va);
+    pte_t pde = pgdir[pdx];
+
+    if (!(pde & PTE_P)) {
+        if (create == false) {
+            cprintf("%k0eWarning: ptp not exist for %p\n", va);
+            return NULL;
+        } else {
+            struct PageInfo *new_page = page_alloc(ALLOC_ZERO);
+            if (new_page == NULL) {
+                cprintf("%k04Fail to create: out of memory\n");
+                return NULL;
+            }
+            new_page->pp_ref++;
+
+            // Maybe buggy here (perm)
+            pgdir[pdx] = page2pa(new_page) | PTE_P;
+        }
+    }
+
+    return (pte_t *) KADDR(PTE_ADDR(pgdir[pdx])) + ptx;
 }
 
 //
@@ -401,9 +422,21 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 //
 // Hint: the TA solution uses pgdir_walk
 static void
-boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
+boot_map_region(pde_t *pgdir, uintptr_t va, size_t size,
+				physaddr_t pa, int perm)
 {
-	// Fill this function in
+	assert((size / PGSIZE) * PGSIZE == size);
+    assert((pa / PGSIZE) * PGSIZE == size);
+    assert(PGOFF(va) == 0);
+
+    uint32_t npages = size / PGSIZE;
+    size_t i;
+    for (i = 0; i < npages; i++) {
+        uintptr_t cur_va = va + i * PGSIZE;
+        uint32_t cur_pa = pa + i * PGSIZE;
+        pte_t *pte_ptr = pgdir_walk(pgdir, (void *) cur_va, true);
+        *pte_ptr = cur_pa | perm | PTE_P;
+    }
 }
 
 //
@@ -434,8 +467,25 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 int
 page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
-	// Fill this function in
-	return 0;
+    // This function will force va alignment (offset ignored)
+	pte_t *pte_ptr = pgdir_walk(pgdir, va, true);
+    if (pte_ptr == NULL) {
+        cprintf("%k04Fail to insert: out of memory\n");
+        return -E_NO_MEM;
+    }
+
+    pp->pp_ref++;
+
+    pte_t pte = *pte_ptr;
+    if (pte & PTE_P) {
+        tlb_invalidate(pgdir, va);
+        page_remove(pgdir, va);
+    }
+
+    *pte_ptr = page2pa(pp) | perm | PTE_P;
+    pgdir[PDX(va)] |= perm;
+
+    return 0;
 }
 
 //
@@ -452,8 +502,14 @@ page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 struct PageInfo *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
-	// Fill this function in
-	return NULL;
+	pte_t* pte_ptr = pgdir_walk(pgdir, va, false);
+    if (pte_ptr == NULL || !((*pte_ptr) | PTE_P))
+        return NULL;
+
+    if (pte_store != NULL)
+        *pte_store = pte_ptr;
+
+    return pa2page(PTE_ADDR(*pte_ptr));
 }
 
 //
@@ -474,7 +530,15 @@ page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 void
 page_remove(pde_t *pgdir, void *va)
 {
-	// Fill this function in
+    pte_t* pte_ptr;
+    struct PageInfo *pp = page_lookup(pgdir, va, &pte_ptr);
+    if (pp == NULL) {
+        cprintf("%0eWarning: nothing to remove at %p", va);
+        return;
+    }
+    tlb_invalidate(pgdir, va);
+    page_decref(pp);
+    *pte_ptr = 0;
 }
 
 //
@@ -539,11 +603,10 @@ check_page_free_list(bool only_low_memory)
 		// check a few pages that shouldn't be on the free list
 		assert(page2pa(pp) != 0);
 		assert(page2pa(pp) != IOPHYSMEM);
-//        if (page2pa(pp) == IOPHYSMEM)
-//            cprintf("%k04 %x %p", pp, page2pa(pp));
 		assert(page2pa(pp) != EXTPHYSMEM - PGSIZE);
 		assert(page2pa(pp) != EXTPHYSMEM);
-		assert(page2pa(pp) < EXTPHYSMEM || (char *) page2kva(pp) >= first_free_page);
+		assert(page2pa(pp) < EXTPHYSMEM
+			   || (char *) page2kva(pp) >= first_free_page);
 
 		if (page2pa(pp) < EXTPHYSMEM)
 			++nfree_basemem;
@@ -663,7 +726,8 @@ check_kern_pgdir(void)
 
 	// check kernel stack
 	for (i = 0; i < KSTKSIZE; i += PGSIZE)
-		assert(check_va2pa(pgdir, KSTACKTOP - KSTKSIZE + i) == PADDR(bootstack) + i);
+		assert(check_va2pa(pgdir, KSTACKTOP - KSTKSIZE + i)
+			   == PADDR(bootstack) + i);
 	assert(check_va2pa(pgdir, KSTACKTOP - PTSIZE) == ~0);
 
 	// check PDE permissions
@@ -748,7 +812,8 @@ check_page(void)
 	assert(pp1->pp_ref == 1);
 	assert(pp0->pp_ref == 1);
 
-	// should be able to map pp2 at PGSIZE because pp0 is already allocated for page table
+	// should be able to map pp2 at PGSIZE because pp0 is already
+	// allocated for page table
 	assert(page_insert(kern_pgdir, pp2, (void*) PGSIZE, PTE_W) == 0);
 	assert(check_va2pa(kern_pgdir, PGSIZE) == page2pa(pp2));
 	assert(pp2->pp_ref == 1);
@@ -781,7 +846,8 @@ check_page(void)
 	assert(*pgdir_walk(kern_pgdir, (void*) PGSIZE, 0) & PTE_W);
 	assert(!(*pgdir_walk(kern_pgdir, (void*) PGSIZE, 0) & PTE_U));
 
-	// should not be able to map at PTSIZE because need free page for page table
+	// should not be able to map at PTSIZE because need free page
+	// for page table
 	assert(page_insert(kern_pgdir, pp0, (void*) PTSIZE, PTE_W) < 0);
 
 	// insert pp1 at PGSIZE (replacing pp2)
