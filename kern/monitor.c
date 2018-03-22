@@ -27,6 +27,7 @@ static struct Command commands[] = {
         {"help",      "Display this list of commands",        mon_help},
         {"kerninfo",  "Display information about the kernel", mon_kerninfo},
         {"backtrace", "Display stack backtrace",              mon_backtrace},
+        {"shutdown",  "Shutdown the kernel",                  mon_shutdown},
         {"restart",   "Restart the kernel",                   mon_restart}
 };
 
@@ -72,7 +73,8 @@ mon_backtrace(int argc, char **argv, struct Trapframe *tf)
                 *(ebp + 3),
                 *(ebp + 4),
                 *(ebp + 5),
-                *(ebp + 6));
+                *(ebp + 6)
+        );
 
         uint32_t eip = *(ebp + 1);
         struct Eipdebuginfo debuginfo;
@@ -88,10 +90,33 @@ mon_backtrace(int argc, char **argv, struct Trapframe *tf)
     return 0;
 }
 
+int mon_shutdown(int argc, char **argv, struct Trapframe *tf)
+{
+    asm volatile ("cli");
+
+    // (phony) ACPI shutdown (http://forum.osdev.org/viewtopic.php?t=16990)
+    // Works for qemu and bochs.
+    outw (0xB004, 0x0 | 0x2000);
+
+    // Magic shutdown code for bochs and qemu.
+//    for (const char *s = "Shutdown"; *s; ++s)
+//        outb (0x8900, *s);
+
+//    // Magic code for VMWare. Also a hard lock.
+//    asm volatile ("cli; hlt");
+
+    // Should never get here;
+//    panic("Shutdown failed!");
+    asm volatile ("int3");
+    return 0;
+}
+
 int mon_restart(int argc, char **argv, struct Trapframe *tf)
 {
-    cprintf("%k0cxixi, not implemented\n");
-    return -1;
+    outb(0x64, 0xFE);
+
+    // Should never get here;
+    panic("Restart failed!");
 }
 
 

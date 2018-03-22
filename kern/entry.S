@@ -80,9 +80,8 @@ relocated:
 	call	i386_init
 
 	# Should never get here, but in case we do, just spin.
-restart:
-  movb    $0xfe,%al               # 0xdf -> port 0x60
-  outb    %al,$0x64
+spin:
+    jmp     spin
 
 
 
