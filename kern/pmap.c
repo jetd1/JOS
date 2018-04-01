@@ -167,9 +167,6 @@ mem_init(void)
 	check_page_alloc();
 	check_page();
 
-    // Remove this line when you're ready to test this function.
-    panic("mem_init: This function is not finished\n");
-
 	//////////////////////////////////////////////////////////////////////
 	// Now we set up virtual memory
 
@@ -180,6 +177,7 @@ mem_init(void)
 	//      (ie. perm = PTE_U | PTE_P)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
+    boot_map_region(kern_pgdir, UPAGES, PTSIZE, PADDR(pages), PTE_U);
 
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
@@ -192,6 +190,8 @@ mem_init(void)
 	//       overwrite memory.  Known as a "guard page".
 	//     Permissions: kernel RW, user NONE
 	// Your code goes here:
+    boot_map_region(kern_pgdir, KSTACKTOP - KSTKSIZE, KSTKSIZE,
+                    PADDR(bootstack), PTE_W);
 
 	//////////////////////////////////////////////////////////////////////
 	// Map all of physical memory at KERNBASE.
@@ -201,6 +201,7 @@ mem_init(void)
 	// we just set up the mapping anyway.
 	// Permissions: kernel RW, user NONE
 	// Your code goes here:
+    boot_map_region(kern_pgdir, KERNBASE, ~KERNBASE + 1, 0, PTE_W);
 
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
@@ -402,8 +403,10 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
             }
             new_page->pp_ref++;
 
-            // Maybe buggy here (perm)
-            pgdir[pdx] = page2pa(new_page) | PTE_P;
+
+            // Or will cause checking failure...
+			// Lese JOS...
+            pgdir[pdx] = page2pa(new_page) | PTE_U | PTE_W | PTE_P;
         }
     }
 
@@ -426,7 +429,7 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size,
 				physaddr_t pa, int perm)
 {
 	assert((size / PGSIZE) * PGSIZE == size);
-    assert((pa / PGSIZE) * PGSIZE == size);
+    assert((pa / PGSIZE) * PGSIZE == pa);
     assert(PGOFF(va) == 0);
 
     uint32_t npages = size / PGSIZE;
