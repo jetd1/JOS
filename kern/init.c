@@ -10,6 +10,7 @@
 #include <kern/kclock.h>
 #include <kern/env.h>
 #include <kern/trap.h>
+#include <inc/x86.h>
 
 
 void
@@ -30,7 +31,7 @@ i386_init(void)
 
 	// Lab 2 memory management initialization functions
 	mem_init();
-
+	
 	// Lab 3 user environment initialization functions
 	env_init();
 	trap_init();
@@ -42,6 +43,9 @@ i386_init(void)
 	// Touch all you want.
 	ENV_CREATE(user_hello, ENV_TYPE_USER);
 #endif // TEST*
+
+	cprintf("%k0000 %k0101 %k0202 %k0303 %k0404 %k0505 %k0606 %k0707\n");
+	cprintf("%k0808 %k0909 %k0a0a %k0b0b %k0c0c %k0d0d %k0e0e %k0f0f\n");
 
 	// We only have one user environment for now, so just run it.
 	env_run(&envs[0]);
@@ -71,7 +75,7 @@ _panic(const char *file, int line, const char *fmt,...)
 	asm volatile("cli; cld");
 
 	va_start(ap, fmt);
-	cprintf("kernel panic at %s:%d: ", file, line);
+	cprintf("%k04kernel panic at %s:%d: ", file, line);
 	vcprintf(fmt, ap);
 	cprintf("\n");
 	va_end(ap);
@@ -89,7 +93,7 @@ _warn(const char *file, int line, const char *fmt,...)
 	va_list ap;
 
 	va_start(ap, fmt);
-	cprintf("kernel warning at %s:%d: ", file, line);
+	cprintf("%k0ekernel warning at %s:%d: ", file, line);
 	vcprintf(fmt, ap);
 	cprintf("\n");
 	va_end(ap);

@@ -7,10 +7,10 @@
 #include <kern/pmap.h>
 #include <kern/env.h>
 
-extern const struct Stab __STAB_BEGIN__[];	// Beginning of stabs table
-extern const struct Stab __STAB_END__[];	// End of stabs table
-extern const char __STABSTR_BEGIN__[];		// Beginning of string table
-extern const char __STABSTR_END__[];		// End of string table
+extern const struct Stab __STAB_BEGIN__[];    // Beginning of stabs table
+extern const struct Stab __STAB_END__[];    // End of stabs table
+extern const char __STABSTR_BEGIN__[];        // Beginning of string table
+extern const char __STABSTR_END__[];        // End of string table
 
 struct UserStabData {
 	const struct Stab *stabs;
@@ -58,48 +58,54 @@ struct UserStabData {
 //
 static void
 stab_binsearch(const struct Stab *stabs, int *region_left, int *region_right,
-	       int type, uintptr_t addr)
+               int type, uintptr_t addr)
 {
-	int l = *region_left, r = *region_right, any_matches = 0;
+    int l = *region_left, r = *region_right, any_matches = 0;
 
-	while (l <= r) {
-		int true_m = (l + r) / 2, m = true_m;
+    while (l <= r)
+    {
+        int true_m = (l + r) / 2, m = true_m;
 
-		// search for earliest stab with right type
-		while (m >= l && stabs[m].n_type != type)
-			m--;
-		if (m < l) {	// no match in [l, m]
-			l = true_m + 1;
-			continue;
-		}
+        // search for earliest stab with right type
+        while (m >= l && stabs[m].n_type != type)
+            m--;
+        if (m < l)
+        {    // no match in [l, m]
+            l = true_m + 1;
+            continue;
+        }
 
-		// actual binary search
-		any_matches = 1;
-		if (stabs[m].n_value < addr) {
-			*region_left = m;
-			l = true_m + 1;
-		} else if (stabs[m].n_value > addr) {
-			*region_right = m - 1;
-			r = m - 1;
-		} else {
-			// exact match for 'addr', but continue loop to find
-			// *region_right
-			*region_left = m;
-			l = m;
-			addr++;
-		}
-	}
+        // actual binary search
+        any_matches = 1;
+        if (stabs[m].n_value < addr)
+        {
+            *region_left = m;
+            l = true_m + 1;
+        } else if (stabs[m].n_value > addr)
+        {
+            *region_right = m - 1;
+            r = m - 1;
+        } else
+        {
+            // exact match for 'addr', but continue loop to find
+            // *region_right
+            *region_left = m;
+            l = m;
+            addr++;
+        }
+    }
 
-	if (!any_matches)
-		*region_right = *region_left - 1;
-	else {
-		// find rightmost region containing 'addr'
-		for (l = *region_right;
-		     l > *region_left && stabs[l].n_type != type;
-		     l--)
-			/* do nothing */;
-		*region_left = l;
-	}
+    if (!any_matches)
+        *region_right = *region_left - 1;
+    else
+    {
+        // find rightmost region containing 'addr'
+        for (l = *region_right;
+             l > *region_left && stabs[l].n_type != type;
+             l--)
+            /* do nothing */;
+        *region_left = l;
+    }
 }
 
 
