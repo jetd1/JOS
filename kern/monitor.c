@@ -11,6 +11,7 @@
 #include <kern/monitor.h>
 #include <kern/kdebug.h>
 #include <kern/trap.h>
+#include "pmap.h"
 
 #define CMDBUF_SIZE    80    // enough for one VGA text line
 
@@ -25,12 +26,16 @@ struct Command
 };
 
 static struct Command commands[] = {
-        {"help",      "Display this list of commands",        mon_help},
-        {"kerninfo",  "Display information about the kernel", mon_kerninfo},
-        {"backtrace", "Display stack backtrace",              mon_backtrace},
-        {"shutdown",  "Shutdown the kernel",                  mon_shutdown},
-        {"restart",   "Restart the kernel",                   mon_restart}
+        {"help",         "Display this list of commands",        mon_help},
+        {"kerninfo",     "Display information about the kernel", mon_kerninfo},
+        {"backtrace",    "Display stack backtrace",         mon_backtrace},
+        {"shutdown",     "Shutdown the kernel",             mon_shutdown},
+        {"restart",      "Restart the kernel",              mon_restart},
+        {"showmappings", "Show memory mappings",            mon_showmappings},
+        {"setperm",      "Set permission for memory mappings",   mon_setperm},
+        {"dump",         "Dump a range of memory",          mon_dump},
 };
+
 
 /***** Implementations of basic kernel monitor commands *****/
 
@@ -120,6 +125,186 @@ int mon_restart(int argc, char **argv, struct Trapframe *tf)
     panic("Restart failed!");
 }
 
+static int mon_showmappings3(uintptr_t start, uintptr_t end)
+{
+    pte_t* pte_ptr;
+
+    cprintf("   START         END        PHYS    PERM\n");
+
+    while (start < end)
+    {
+        cprintf("0x%08x - 0x%08x: ",start, start + PGSIZE);
+
+        pte_ptr = pgdir_walk(kern_pgdir, (void *)start, 0);
+        if (pte_ptr == NULL)
+            cprintf("Not mapped ----\n");
+        else
+        {
+            pte_t pte = *pte_ptr;
+
+            cprintf("0x%08x ", PTE_ADDR(pte));
+            if (pte & PTE_U)
+                cprintf("U");
+            else
+                cprintf("-");
+            cprintf("R");
+            if (pte & PTE_W)
+                cprintf("W");
+            else
+                cprintf("-");
+            if (pte & PTE_P)
+                cprintf("P");
+            else
+                cprintf("-");
+
+            cprintf("\n");
+        }
+        start += PGSIZE;
+    }
+
+    return 0;
+}
+
+int mon_showmappings(int argc, char **argv, struct Trapframe *tf)
+{
+    uintptr_t start, end;
+    if (argc == 2 || argc == 3)
+    {
+        start = strtol(argv[1], NULL, 0);
+        end = (argc == 2) ? start + PGSIZE : strtol(argv[2], NULL, 0);
+
+        if (start != ROUNDUP(start, PGSIZE)
+            || end != ROUNDUP(end, PGSIZE)
+            || start >= end)
+        {
+            cprintf("Invalid address!\n");
+            return 0;
+        }
+        return mon_showmappings3(start, end);
+    }
+    else
+    {
+        cprintf("Usage: showmappings START_ADDR [END_ADDR]\n\n");
+        cprintf("Both addresses should be properly aligned.\n");
+        cprintf("You can omit END_ADDR to show only one page.\n");
+        return 0;
+    }
+}
+
+static int mon_setperm4(uintptr_t start, uintptr_t end, const char *perm)
+{
+    pte_t* pte_ptr;
+
+    while (start < end)
+    {
+        pte_ptr = pgdir_walk(kern_pgdir, (void *)start, 0);
+        if (pte_ptr == NULL)
+            cprintf("Address 0x%08x not mapped! Skipping...\n", start);
+        else
+        {
+            if (perm[0] == 'U')
+                *pte_ptr |= PTE_U;
+            else
+                *pte_ptr &= (~PTE_U);
+
+            if (perm[1] == 'W')
+                *pte_ptr |= PTE_W;
+            else
+                *pte_ptr &= (~PTE_W);
+        }
+        start += PGSIZE;
+    }
+
+    return 0;
+}
+
+int mon_setperm(int argc, char **argv, struct Trapframe *tf)
+{
+    if (argc != 3 && argc != 4)
+    {
+        cprintf("Usage: setperm PERM START_ADDR [END_ADDR]\n\n");
+        cprintf("Both addresses should be properly aligned.\n");
+        cprintf("You can omit END_ADDR to set for only one page.\n");
+        cprintf("PERM should be one of --, -W, U-, UW.\n");
+        return 0;
+    }
+
+    uintptr_t start, end;
+    start = strtol(argv[2], NULL, 0);
+    end = (argc == 3) ? start + PGSIZE : strtol(argv[3], NULL, 0);
+
+    if (start != ROUNDUP(start, PGSIZE)
+        || end != ROUNDUP(end, PGSIZE)
+        || start >= end)
+    {
+        cprintf("Invalid address!\n");
+        return 0;
+    }
+
+    char *perm = argv[1];
+    if ((perm[0] != '-' && perm[0] != 'U')
+        || (perm[1] != '-' && perm[1] != 'W'))
+    {
+        cprintf("Invalid permission!\n");
+        return 0;
+    }
+
+    return mon_setperm4(start, end, perm);
+}
+
+static int mon_dump4p(physaddr_t start, physaddr_t end)
+{
+    uintptr_t vstart = (uintptr_t)KADDR(start);
+    uintptr_t vend = (uintptr_t)KADDR(end);
+
+    for (int i = vstart; i < vend; i += 1)
+    {
+        if(!(i % 16))
+            cprintf("\n0x%08x: ", PADDR((void *)i));
+        cprintf("%02x ", *((uint8_t *)i));
+    }
+    cprintf("\n");
+
+    return 0;
+}
+
+static int mon_dump4v(uintptr_t start, uintptr_t end)
+{
+    for (int i = start; i < end; i += 1)
+    {
+        if(!(i % 16))
+            cprintf("\n0x%08x: ", i);
+        cprintf("%02x ", *((uint8_t *)i));
+    }
+    cprintf("\n");
+
+    return 0;
+}
+
+int mon_dump(int argc, char **argv, struct Trapframe *tf)
+{
+    if (argc != 3 && argc != 4)
+    {
+        cprintf("Usage: dump TYPE START_ADDR [END_ADDR]\n\n");
+        cprintf("TYPE should be V (Virtual) or P (Physical).\n");
+        cprintf("You can omit END_ADDR to dump one page.\n");
+        return 0;
+    }
+
+    uintptr_t start, end;
+    start = strtol(argv[2], NULL, 0);
+    end = (argc == 3) ? start + PGSIZE : strtol(argv[3], NULL, 0);
+
+    if (argv[1][0] == 'V')
+        return mon_dump4v(start, end);
+    else if  (argv[1][0] == 'P')
+        return mon_dump4p(start, end);
+    else
+    {
+        cprintf("Invalid address type!\n");
+        return 0;
+    }
+}
 
 
 /***** Kernel monitor command interpreter *****/

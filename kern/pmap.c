@@ -406,7 +406,7 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 
     if (!(pde & PTE_P)) {
         if (create == false) {
-            cprintf("%k0eWarning: ptp not exist for %p\n", va);
+//            cprintf("%k0eWarning: ptp not exist for %p\n", va);
             return NULL;
         } else {
             struct PageInfo *new_page = page_alloc(ALLOC_ZERO);
