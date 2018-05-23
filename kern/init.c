@@ -18,6 +18,7 @@
 static void boot_aps(void);
 
 
+
 void
 i386_init(void)
 {
@@ -36,7 +37,7 @@ i386_init(void)
 
 	// Lab 2 memory management initialization functions
 	mem_init();
-
+	
 	// Lab 3 user environment initialization functions
 	env_init();
 	trap_init();
@@ -144,7 +145,7 @@ _panic(const char *file, int line, const char *fmt,...)
 	asm volatile("cli; cld");
 
 	va_start(ap, fmt);
-	cprintf("kernel panic on CPU %d at %s:%d: ", cpunum(), file, line);
+	cprintf("%k04kernel panic on CPU %d at %s:%d: ", cpunum(), file, line);
 	vcprintf(fmt, ap);
 	cprintf("\n");
 	va_end(ap);
@@ -162,7 +163,7 @@ _warn(const char *file, int line, const char *fmt,...)
 	va_list ap;
 
 	va_start(ap, fmt);
-	cprintf("kernel warning at %s:%d: ", file, line);
+	cprintf("%k0ekernel warning at %s:%d: ", file, line);
 	vcprintf(fmt, ap);
 	cprintf("\n");
 	va_end(ap);

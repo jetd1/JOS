@@ -16,3 +16,8 @@
 /sol?/
 /myapi.key
 /.suf
+/.DS_Store
+/.idea
+CMakeLists.txt
+cmake-build-debug/
+/__pycache__
