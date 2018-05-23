@@ -242,6 +242,9 @@ mem_init(void)
 
 	// Some more checks, only possible after kern_pgdir is installed.
 	check_page_installed_pgdir();
+
+//	intptr_t bad_ptr = 0x12345678;
+//	*(char*)bad_ptr = 1;
 }
 
 // --------------------------------------------------------------

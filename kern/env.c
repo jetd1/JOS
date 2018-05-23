@@ -234,7 +234,7 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 	// to prevent the register values
 	// of a prior environment inhabiting this Env structure
 	// from "leaking" into our new environment.
-	memset(&e->env_tf, 0, sizeof(e->env_tf));
+    memset(&e->env_tf, 0, sizeof(e->env_tf));
 
 	// Set up appropriate initial values for the segment registers.
 	// GD_UD is the user data segment selector in the GDT, and
@@ -394,7 +394,7 @@ env_create(uint8_t *binary, enum EnvType type)
     if (ecode == 0)
         load_icode(e, binary);
     else
-        cprintf("%k04env_alloc failed: error code %e.\n", ecode);
+        panic("%env_alloc failed: error code %e.\n", ecode);
 }
 
 //

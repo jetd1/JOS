@@ -44,8 +44,8 @@ i386_init(void)
 	ENV_CREATE(user_hello, ENV_TYPE_USER);
 #endif // TEST*
 
-	cprintf("%k0000 %k0101 %k0202 %k0303 %k0404 %k0505 %k0606 %k0707\n");
-	cprintf("%k0808 %k0909 %k0a0a %k0b0b %k0c0c %k0d0d %k0e0e %k0f0f\n");
+//	cprintf("%k0000 %k0101 %k0202 %k0303 %k0404 %k0505 %k0606 %k0707\n");
+//	cprintf("%k0808 %k0909 %k0a0a %k0b0b %k0c0c %k0d0d %k0e0e %k0f0f\n");
 
 	// We only have one user environment for now, so just run it.
 	env_run(&envs[0]);

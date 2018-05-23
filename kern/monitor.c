@@ -12,6 +12,7 @@
 #include <kern/kdebug.h>
 #include <kern/trap.h>
 #include "pmap.h"
+#include "env.h"
 
 #define CMDBUF_SIZE    80    // enough for one VGA text line
 
@@ -26,14 +27,20 @@ struct Command
 };
 
 static struct Command commands[] = {
-        {"help",         "Display this list of commands",        mon_help},
-        {"kerninfo",     "Display information about the kernel", mon_kerninfo},
+        {"help",         "Display this list of commands",   mon_help},
+        {"kerninfo",     "Display information about the kernel",
+                                                            mon_kerninfo},
         {"backtrace",    "Display stack backtrace",         mon_backtrace},
         {"shutdown",     "Shutdown the kernel",             mon_shutdown},
         {"restart",      "Restart the kernel",              mon_restart},
         {"showmappings", "Show memory mappings",            mon_showmappings},
-        {"setperm",      "Set permission for memory mappings",   mon_setperm},
+        {"setperm",      "Set permission for memory mappings",
+                                                            mon_setperm},
         {"dump",         "Dump a range of memory",          mon_dump},
+        {"c",            "Continue the execution (for debug)",
+                                                            mon_continue},
+        {"s",            "Continue the execution by step (for debug)",
+                                                            mon_step},
 };
 
 
@@ -68,8 +75,13 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf)
 int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 {
-    uint32_t *ebp = (uint32_t *) read_ebp();
+    register uint32_t *ebp = (uint32_t *) read_ebp();
     cprintf("Stack backtrace:\n");
+
+    register bool user_flag = false;
+
+    cprintf("[INFO] curenv %08x\n", curenv->env_id);
+
     while (ebp)
     {
         cprintf("  ebp %x  eip %x  args %08x %08x %08x %08x %08x\n",
@@ -92,7 +104,18 @@ mon_backtrace(int argc, char **argv, struct Trapframe *tf)
                 eip - debuginfo.eip_fn_addr);
 
         ebp = (uint32_t *) *ebp;
+
+        if (curenv != NULL && !user_flag && (uint32_t)ebp < KSTACKTOP - PTSIZE)
+        {
+            cprintf("  ebp %x  (user env)\n", ebp);
+            break;
+//            user_flag = true;
+//            lcr3(PADDR(curenv->env_pgdir));
+        }
     }
+//    if (user_flag)
+//        lcr3(PADDR(kern_pgdir));
+
     return 0;
 }
 
@@ -104,15 +127,6 @@ int mon_shutdown(int argc, char **argv, struct Trapframe *tf)
     // Works for qemu and bochs.
     outw (0xB004, 0x0 | 0x2000);
 
-    // Magic shutdown code for bochs and qemu.
-//    for (const char *s = "Shutdown"; *s; ++s)
-//        outb (0x8900, *s);
-
-//    // Magic code for VMWare. Also a hard lock.
-//    asm volatile ("cli; hlt");
-
-    // Should never get here;
-//    panic("Shutdown failed!");
     asm volatile ("int3");
     return 0;
 }
@@ -121,11 +135,11 @@ int mon_restart(int argc, char **argv, struct Trapframe *tf)
 {
     outb(0x64, 0xFE);
 
-    // Should never get here;
+//     Should never get here;
     panic("Restart failed!");
 }
 
-static int mon_showmappings3(uintptr_t start, uintptr_t end)
+static int __mon_showmappings3(uintptr_t start, uintptr_t end)
 {
     pte_t* pte_ptr;
 
@@ -180,7 +194,7 @@ int mon_showmappings(int argc, char **argv, struct Trapframe *tf)
             cprintf("Invalid address!\n");
             return 0;
         }
-        return mon_showmappings3(start, end);
+        return __mon_showmappings3(start, end);
     }
     else
     {
@@ -191,7 +205,7 @@ int mon_showmappings(int argc, char **argv, struct Trapframe *tf)
     }
 }
 
-static int mon_setperm4(uintptr_t start, uintptr_t end, const char *perm)
+static int __mon_setperm4(uintptr_t start, uintptr_t end, const char *perm)
 {
     pte_t* pte_ptr;
 
@@ -249,10 +263,10 @@ int mon_setperm(int argc, char **argv, struct Trapframe *tf)
         return 0;
     }
 
-    return mon_setperm4(start, end, perm);
+    return __mon_setperm4(start, end, perm);
 }
 
-static int mon_dump4p(physaddr_t start, physaddr_t end)
+static int __mon_dump4p(physaddr_t start, physaddr_t end)
 {
     uintptr_t vstart = (uintptr_t)KADDR(start);
     uintptr_t vend = (uintptr_t)KADDR(end);
@@ -268,7 +282,7 @@ static int mon_dump4p(physaddr_t start, physaddr_t end)
     return 0;
 }
 
-static int mon_dump4v(uintptr_t start, uintptr_t end)
+static int __mon_dump4v(uintptr_t start, uintptr_t end)
 {
     for (int i = start; i < end; i += 1)
     {
@@ -296,14 +310,38 @@ int mon_dump(int argc, char **argv, struct Trapframe *tf)
     end = (argc == 3) ? start + PGSIZE : strtol(argv[3], NULL, 0);
 
     if (argv[1][0] == 'V')
-        return mon_dump4v(start, end);
+        return __mon_dump4v(start, end);
     else if  (argv[1][0] == 'P')
-        return mon_dump4p(start, end);
+        return __mon_dump4p(start, end);
     else
     {
         cprintf("Invalid address type!\n");
         return 0;
     }
+}
+
+int mon_continue(int argc, char **argv, struct Trapframe *tf)
+{
+    if (tf == NULL)
+    {
+        cprintf("%k04No trapframe found.\n");
+        return 0;
+    }
+
+    tf->tf_eflags &= ~FL_TF;
+    return -1;
+}
+
+int mon_step(int argc, char **argv, struct Trapframe *tf)
+{
+    if (tf == NULL)
+    {
+        cprintf("%k04No trapframe found.\n");
+        return 0;
+    }
+
+    tf->tf_eflags |= FL_TF;
+    return -1;
 }
 
 
@@ -354,6 +392,8 @@ runcmd(char *buf, struct Trapframe *tf)
     return 0;
 }
 
+// Use this if you want to grade using `make grade`
+/*
 void
 monitor(struct Trapframe *tf)
 {
@@ -368,6 +408,40 @@ monitor(struct Trapframe *tf)
     while (1)
     {
         buf = readline("K> ");
+        if (buf != NULL)
+            if (runcmd(buf, tf) < 0)
+                break;
+    }
+}
+*/
+
+void
+monitor(struct Trapframe *tf)
+{
+    char *buf;
+    bool debug_flag = tf && (tf->tf_eflags & FL_TF);
+
+    if (debug_flag)
+    {
+        cprintf("Single step debugging...\n");
+        cprintf("Type 'c' to continue, 's' to step.\n");
+    }
+    else
+    {
+        cprintf("Welcome to the JOS kernel monitor!\n");
+        cprintf("Type 'help' for a list of commands.\n");
+    }
+
+    if (tf != NULL)
+        print_trapframe(tf);
+
+    while (1)
+    {
+        if (debug_flag)
+            cprintf("[%08x] Debug", curenv->env_id);
+        else
+            cprintf("K");
+        buf = readline("> ");
         if (buf != NULL)
             if (runcmd(buf, tf) < 0)
                 break;
